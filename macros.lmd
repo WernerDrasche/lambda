@@ -1,0 +1,20 @@
+S = @wyx.y(wyx);
+M = @xyz.x(yz);
+
+0 = @sz.z;
+1 = S0;
+2 = S1;
+3 = 2S1;
+4 = 2S2;
+5 = 3S2;
+6 = 3S3;
+7 = 4S3;
+8 = 5S3;
+9 = M33;
+
+T = @xy.x;
+F = @xy.y;
+A = @xy.xyF;
+O = @xy.xTy;
+N = @x.xFT;
+Z = @x.xFNF;
