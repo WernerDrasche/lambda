@@ -67,6 +67,8 @@ struct macro {
     struct expression *value;
 };
 
+struct macro *macros = NULL;
+
 struct expression *parse(struct token *tokens, unsigned n, struct function *f) {
     if (n == 0) return NULL;
     struct expression *expr;
@@ -260,6 +262,7 @@ void free_function(struct function *f) {
     unsigned rc = --*f->rc;
     if (rc == 0) {
         arrfree(f->params);
+		free(f->rc);
     }
     free(f);
 }
@@ -310,13 +313,13 @@ void print(struct expression *expr) {
     }
 }
 
-struct expression *apply(struct application *app, struct macro *macros);
-struct expression *apply_all(struct expression *expr, struct macro *macros) {
+struct expression *apply(struct application *app);
+struct expression *apply_all(struct expression *expr) {
     switch (expr->t) {
         case APPLICATION:
-            return apply((struct application *)expr, macros);
+            return apply((struct application *)expr);
         case FUNCTION:
-            expr->f.body = apply_all(expr->f.body, macros);
+            expr->f.body = apply_all(expr->f.body);
             break;
         case VARIABLE:
             break;
@@ -324,14 +327,14 @@ struct expression *apply_all(struct expression *expr, struct macro *macros) {
     return expr;
 }
 
-struct expression *apply(struct application *app, struct macro *macros) {
-    struct expression *left = app->left = apply_all(app->left, macros);
+struct expression *apply(struct application *app) {
+    struct expression *left = app->left = apply_all(app->left);
     unsigned midx;
     if (left->t == VARIABLE && left->v.depth == 0 && (midx = hmgeti(macros, left->v.id)) != -1) {
         free(app->left);
-        left = app->left = apply_all(copy(macros[midx].value), macros);
+        left = app->left = apply_all(copy(macros[midx].value));
     }
-    struct expression *right = app->right = apply_all(app->right, macros);
+    struct expression *right = app->right = apply_all(app->right);
     if (left->t == FUNCTION) {
         bool enclosed = app->enclosed;
         free(app);
@@ -343,7 +346,7 @@ struct expression *apply(struct application *app, struct macro *macros) {
         //body = fix_associativity(body);
         //print(body);
         //putc('\n', stdout);
-        body = apply_all(body, macros);
+        body = apply_all(body);
         if (i == left->f.n - 1) {
             free_function(&left->f);
             adjust_depth(body, -1, 1);
@@ -358,7 +361,7 @@ struct expression *apply(struct application *app, struct macro *macros) {
     return (struct expression *)app;
 }
 
-struct macro *macros_from_file(const char *filepath) {
+void load_macros_from_file(const char *filepath) {
     FILE *f = fopen(filepath, "r");
     if (!f) {
         err(1, "open failed (%s)", filepath);
@@ -376,7 +379,7 @@ struct macro *macros_from_file(const char *filepath) {
     if (num_read != size) {
         err(1, "read failed (%s)", filepath);
     }
-    struct macro *macros = NULL;
+	fclose(f);
     buf[size] = 0;
     struct token *tokens = tokenize(buf);
     unsigned n = arrlen(tokens);
@@ -410,24 +413,27 @@ struct macro *macros_from_file(const char *filepath) {
     }
     arrfree(tokens);
     free(buf);
-    return macros;
 }
 
-void evalm(const char *prog, struct macro *macros) {
+void eval(const char *prog) {
     struct token *tokens = tokenize(prog);
     unsigned n = arrlen(tokens);
     struct expression *expr = fix_associativity(parse(tokens, n, NULL));
     print(expr);
     putc('\n', stdout);
-    expr = apply_all(expr, macros);
+    expr = apply_all(expr);
     print(expr);
     puts("\n");
     free_all(expr);
     arrfree(tokens);
 }
 
-void eval(const char *prog) {
-    evalm(prog, NULL);
+void free_macros(void) {
+	unsigned n = hmlen(macros);
+    for (unsigned i = 0; i < n; ++i) {
+		free_all(macros[i].value);
+	}
+	hmfree(macros);
 }
 
 //for debug purposes
@@ -443,16 +449,16 @@ void print_macros(struct macro *macros) {
 }
 
 int main(void) {
-    //eval("(@x.x)x");
-    //eval("(@a.(@x.ax)b)@x.xaxa");
-    //eval("((@bs.(@xa.(@ya.x)x)(@h.s))b)z");
-    //eval("(@wyx.y(wyx))(@sz.s(s(s(z))))");
-    //eval("(@sz.s(sz))(@wyx.y(wyx))(@uv.u(u(uv)))");
-    //eval("(@uv.u(u(uv)))(@wyx.y(wyx))((@sz.s(s(s(s(sz)))))(@wyx.y(wyx))(@uv.u(u(uv))))");
-    //eval("(@xyz.x(yz))(@uv.u(u(u(uv))))(@uv.u(u(uv)))");
-    //eval("(@x.(b (x a))(b (x c)))(@a.a)");
-    struct macro *macros = macros_from_file("macros.lmd");
-    evalm("O(Z1)(Z0)", macros);
-    hmfree(macros);
+    load_macros_from_file("macros.lmd");
+    eval("(@x.x)x");
+    eval("(@a.(@x.ax)b)@x.xaxa");
+    eval("((@bs.(@xa.(@ya.x)x)(@h.s))b)z");
+    eval("(@wyx.y(wyx))(@sz.s(s(s(z))))");
+    eval("(@sz.s(sz))(@wyx.y(wyx))(@uv.u(u(uv)))");
+    eval("(@uv.u(u(uv)))(@wyx.y(wyx))((@sz.s(s(s(s(sz)))))(@wyx.y(wyx))(@uv.u(u(uv))))");
+    eval("(@xyz.x(yz))(@uv.u(u(u(uv))))(@uv.u(u(uv)))");
+    eval("(@x.(b (x a))(b (x c)))(@a.a)");
+    eval("O(Z1)(Z0)");
+	free_macros();
     return 0;
 }
