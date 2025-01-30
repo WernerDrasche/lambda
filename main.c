@@ -5,33 +5,60 @@
 #include <err.h>
 #include <stdbool.h>
 
-//TODO: parse utf-8 symbols => should be easy
-
-enum token_t { LAMBDA, SYMBOL, DOT, LBRACKET, RBRACKET, EQUALS, SEMICOLON };
+enum token_t { LAMBDA, SYMBOL, DOT, LBRACKET, RBRACKET, SEMICOLON };
 
 struct token {
     enum token_t t;
     union {
-        char symbol;
+        unsigned symbol;
     };
 };
 
+char leading_ones(char byte) {
+	char count;
+	for (count = 0; count < 8; ++count) {
+		if (!(byte & 0x80)) break;
+		byte <<= 1;
+	}
+	return count;
+}
+
 struct token *tokenize(const char *str) {
     struct token *tokens = NULL;
-    char c;
+    unsigned char c;
     struct token token;
-    while ((c = *str++)) {
-        if (c <= ' ' || c == 127) continue;
+    while ((c = *str)) {
+        if (c <= ' ' || c == 127) {
+			++str;
+			continue;
+		}
+		bool symbol = false;
         switch (c) {
             case '@': token.t = LAMBDA; break;
             case '(': token.t = LBRACKET; break;
             case ')': token.t = RBRACKET; break;
             case '.': token.t = DOT; break;
             case ';': token.t = SEMICOLON; break;
-            case '=': token.t = EQUALS; token.symbol = c; break;
-            default: token.t = SYMBOL; token.symbol = c; break;
+            default: 
+				token.t = SYMBOL; 
+				char n = leading_ones(c);
+				if (n == 0) {
+					n = 1;
+				}
+				token.symbol = 0;
+				for (char i = 0; i < n; ++i) {
+					token.symbol >>= 8;
+					token.symbol |= str[i] << 24;
+				}
+				token.symbol >>= (sizeof(token.symbol) - n) * 8;
+				if (token.symbol == 0xbbce) {
+					token.t = LAMBDA;
+				}
+				str += n - 1;
+				break;
         }
         arrput(tokens, token);
+		++str;
     }
     return tokens;
 }
@@ -98,7 +125,7 @@ struct expression *parse(struct token *tokens, unsigned n, struct function *f) {
         errx(1, "unmatched )");
     }
     expr = malloc(sizeof(struct expression));
-    if (t == SYMBOL || t == EQUALS) {
+    if (t == SYMBOL) {
         unsigned symbol = tokens->symbol;
         struct function *cur;
         unsigned depth = 0;
@@ -156,7 +183,7 @@ found:
         expr->consumed = 2 + num_params + body->consumed;
         goto next;
     }
-    errx(1, "unreachable");
+    errx(1, "encountered . outside of function declaration");
     
     unsigned consumed;
     struct expression *right;
@@ -287,10 +314,10 @@ void free_all(struct expression *expr) {
 ///assumes little endian
 void print(struct expression *expr) {
     if (!expr) return;
-    char buf[sizeof(unsigned) + 1] = {0};
+	char buf[sizeof(unsigned) + 1] = {0};
     switch (expr->t) {
         case VARIABLE:
-            memcpy(buf, &expr->v.id, sizeof(unsigned));
+			*(unsigned *)buf = expr->v.id;
             printf("%s", buf);
             break;
         case APPLICATION:
@@ -301,7 +328,7 @@ void print(struct expression *expr) {
             putc(')', stdout);
             break;
         case FUNCTION:
-            putc('@', stdout);
+			printf("λ");
             unsigned *params = expr->f.params;
             for (unsigned i = expr->f.i; i < expr->f.n; ++i) {
                 memcpy(buf, params + i, sizeof(unsigned));
@@ -391,7 +418,7 @@ void load_macros_from_file(const char *filepath) {
         }
         unsigned id = start->symbol;
         ++start;
-        if (start->t != EQUALS) {
+		if (start->t != SYMBOL || start->symbol != '=') {
             errx(1, "= must follow after macro identifier");
         }
         ++start;
@@ -437,7 +464,7 @@ void free_macros(void) {
 }
 
 //for debug purposes
-void print_macros(struct macro *macros) {
+void print_macros(void) {
     unsigned n = hmlen(macros);
     for (unsigned i = 0; i < n; ++i) {
         struct macro *m = macros + i;
@@ -448,17 +475,22 @@ void print_macros(struct macro *macros) {
     }
 }
 
+int test(void) {
+	eval("@x.x");
+	return 0;
+}
+
 int main(void) {
     load_macros_from_file("macros.lmd");
-    eval("(@x.x)x");
-    eval("(@a.(@x.ax)b)@x.xaxa");
-    eval("((@bs.(@xa.(@ya.x)x)(@h.s))b)z");
-    eval("(@wyx.y(wyx))(@sz.s(s(s(z))))");
-    eval("(@sz.s(sz))(@wyx.y(wyx))(@uv.u(u(uv)))");
-    eval("(@uv.u(u(uv)))(@wyx.y(wyx))((@sz.s(s(s(s(sz)))))(@wyx.y(wyx))(@uv.u(u(uv))))");
-    eval("(@xyz.x(yz))(@uv.u(u(u(uv))))(@uv.u(u(uv)))");
-    eval("(@x.(b (x a))(b (x c)))(@a.a)");
-    eval("O(Z1)(Z0)");
+    //eval("(@x.x)x");
+    //eval("(@a.(@x.ax)b)@x.xaxa");
+    //eval("((@bs.(@xa.(@ya.x)x)(@h.s))b)z");
+    //eval("(@wyx.y(wyx))(@sz.s(s(s(z))))");
+    //eval("(@sz.s(sz))(@wyx.y(wyx))(@uv.u(u(uv)))");
+    //eval("(@uv.u(u(uv)))(@wyx.y(wyx))((@sz.s(s(s(s(sz)))))(@wyx.y(wyx))(@uv.u(u(uv))))");
+    //eval("(@xyz.x(yz))(@uv.u(u(u(uv))))(@uv.u(u(uv)))");
+    //eval("(@x.(b (x a))(b (x c)))(@a.a)");
+    eval("λx.∨(Z1)(Z0)");
 	free_macros();
     return 0;
 }

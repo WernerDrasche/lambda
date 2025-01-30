@@ -14,7 +14,7 @@ M = @xyz.x(yz);
 
 T = @xy.x;
 F = @xy.y;
-A = @xy.xyF;
-O = @xy.xTy;
-N = @x.xFT;
-Z = @x.xFNF;
+∧ = @xy.xyF;
+∨ = @xy.xTy;
+¬ = @x.xFT;
+Z = @x.xF¬F;
